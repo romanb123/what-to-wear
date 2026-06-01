@@ -1,0 +1,75 @@
+name: Build Android AAB
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: write
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Set version and versionCode from run number
+        run: |
+          VERSION_CODE=$(( ${{ github.run_number }} + 60 ))
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+          node -e "
+            const fs = require('fs');
+            const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            app.expo.android.versionCode = $VERSION_CODE;
+            const base = app.expo.version?.split('.').slice(0, 2).join('.') || '1.0';
+            app.expo.version = base + '.' + $VERSION_CODE;
+            fs.writeFileSync('app.json', JSON.stringify(app, null, 2));
+            console.log('version:', app.expo.version, '| versionCode:', app.expo.android.versionCode);
+          "
+
+      - name: Create config.js from secret
+        run: |
+          cat > src/config.js << 'EOF'
+          export const GROQ_API_KEY    = '${{ secrets.GROQ_API_KEY }}';
+          export const GEMINI_API_KEY  = '${{ secrets.GEMINI_API_KEY }}';
+          export const REMOVEBG_API_KEY = '${{ secrets.REMOVEBG_API_KEY }}';
+          EOF
+
+      - name: Build AAB locally
+        run: npx eas build --platform android --profile store --local --non-interactive --output ./build-output.aab
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Create GitHub Release with AAB
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ env.VERSION_CODE }}
+          name: "v1.0.${{ env.VERSION_CODE }}"
+          body: "Android AAB — version 1.0.${{ env.VERSION_CODE }} | versionCode ${{ env.VERSION_CODE }}"
+          files: ./build-output.aab
+          make_latest: true

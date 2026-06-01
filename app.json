@@ -1,0 +1,41 @@
+﻿{
+  "expo": {
+    "name": "מה ללבוש",
+    "slug": "what-to-wear",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0E0E0E"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.whatowear.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0E0E0E"
+      },
+      "package": "com.whatowear.app"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "האפליקציה צריכה גישה לגלריה שלך כדי להוסיף תמונות לבגדים"
+        }
+      ],
+      "expo-font",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-7192489598387711~3466165963",
+          "iosAppId":     "ca-app-pub-3940256099942544~1458002511"
+        }
+      ]
+    ]
+  }
+}

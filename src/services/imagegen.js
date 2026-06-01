@@ -1,30 +1,21 @@
 import { GEMINI_API_KEY } from '../config';
 
-// Gemini 2.0 Flash Experimental Image Generation — supports img2img editing
-// This model accepts an image as input and can output an edited image.
-const MODEL    = 'gemini-2.0-flash-exp-image-generation';
-const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+// Image generation models available in this account (from ListModels):
+// gemini-3.1-flash-image  = Nano Banana 2 (newest)
+// gemini-3-pro-image      = Nano Banana Pro
+// gemini-2.5-flash-image  = Nano Banana (returns text, skip)
+const MODELS = [
+  'gemini-3.1-flash-image',
+  'gemini-3-pro-image',
+];
 
-export async function generateFromReference(base64Image, analysisData = {}) {
-  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_GEMINI_KEY_HERE') {
-    throw new Error('Gemini API key not configured');
-  }
-
-  const { name, description, category } = analysisData;
-  const subject = description || name || category || 'clothing item';
-
-  // Clear instruction to edit the image (not describe it)
-  const prompt =
-    `Edit this photo: remove the background and replace it with solid white. ` +
-    `Keep the ${subject} exactly as it appears. ` +
-    `Output a clean e-commerce product photo with white background and soft studio lighting.`;
-
+async function tryGenerate(model, base64Image, prompt, timeoutMs) {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const controller = new AbortController();
-  // 3-minute timeout — image generation can be slow
-  const timeout = setTimeout(() => controller.abort(), 180000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(`${ENDPOINT}?key=${GEMINI_API_KEY}`, {
+    const res = await fetch(`${endpoint}?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -34,10 +25,7 @@ export async function generateFromReference(base64Image, analysisData = {}) {
             { text: prompt },
           ],
         }],
-        generationConfig: {
-          // Request IMAGE output only — prevents the model from replying with text instead
-          responseModalities: ['IMAGE'],
-        },
+        generationConfig: { responseModalities: ['IMAGE'] },
       }),
       signal: controller.signal,
     });
@@ -45,30 +33,48 @@ export async function generateFromReference(base64Image, analysisData = {}) {
     const json = await res.json();
 
     if (!res.ok) {
-      // Surface the exact Gemini error (quota, model not found, etc.)
-      throw new Error(json?.error?.message || `Gemini error ${res.status}`);
+      throw new Error(json?.error?.message || `HTTP ${res.status}`);
     }
 
     const parts = json?.candidates?.[0]?.content?.parts || [];
-    const imagePart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
-
-    if (!imagePart) {
-      const textPart    = parts.find(p => p.text)?.text || '';
-      const finishReason = json?.candidates?.[0]?.finishReason || 'unknown';
-      throw new Error(
-        `Gemini did not return an image.\nReason: ${finishReason}` +
-        (textPart ? `\nModel said: "${textPart.slice(0, 120)}"` : '')
-      );
+    const imgPart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
+    if (!imgPart) {
+      const reason = json?.candidates?.[0]?.finishReason || 'unknown';
+      throw new Error(`no_image:${reason}`);
     }
 
-    return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
-
-  } catch (e) {
-    if (e.name === 'AbortError') {
-      throw new Error('Image generation timed out (3 min). Please try again.');
-    }
-    throw e;
+    return `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`;
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(timer);
   }
+}
+
+export async function generateFromReference(base64Image, analysisData = {}) {
+  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_GEMINI_KEY_HERE') {
+    throw new Error('Gemini API key not configured');
+  }
+
+  const { name, description, category, color } = analysisData;
+  const details = [description, name, category, color ? `color: ${color}` : ''].filter(Boolean).join(', ');
+
+  const prompt =
+    `Edit this photo of a clothing item (${details}): ` +
+    `remove the background and replace it with solid white. ` +
+    `Keep the clothing item exactly as it appears in the photo — same colors, shape, and details. ` +
+    `Output a clean e-commerce product photo with white background and studio lighting.`;
+
+  let lastError;
+  for (const model of MODELS) {
+    try {
+      return await tryGenerate(model, base64Image, prompt, 180000); // 3 min timeout
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        lastError = new Error(`תם הזמן (3 דק׳) על ${model}`);
+      } else {
+        lastError = e;
+      }
+    }
+  }
+
+  throw lastError || new Error('כל מודלי Gemini נכשלו');
 }

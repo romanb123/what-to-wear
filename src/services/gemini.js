@@ -1,8 +1,7 @@
-import { GROQ_API_KEY } from '../config';
+import { GEMINI_API_KEY } from '../config';
 import { PRESET_COLORS } from '../theme';
 
-const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL   = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 
 // ── Color matching ──────────────────────────────────────────────────────────
 
@@ -42,65 +41,52 @@ Return ONLY a valid JSON object (no markdown, no extra text) with these exact fi
 
 Always return valid JSON only.`;
 
-  const body = {
-    model: MODEL,
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } },
-      ],
-    }],
-    temperature: 0.2,
-    max_tokens: 500,
-  };
+  let lastError;
+  for (const model of MODELS) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+    try {
+      const res = await fetch(`${endpoint}?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
+              { text: prompt },
+            ],
+          }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+        }),
+        signal: controller.signal,
+      });
 
-  let res;
-  try {
-    res = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (e) {
-    if (e.name === 'AbortError') throw new Error('Request timed out after 30s. Try again.');
-    throw e;
-  } finally {
-    clearTimeout(timeout);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error?.message || `Gemini error ${res.status}`);
+
+      const text = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (!text) throw new Error('No clothing item detected. Please photograph a clothing item directly.');
+
+      const cleaned = text.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error(`Could not parse response: ${cleaned.slice(0, 100)}`);
+
+      const data = JSON.parse(jsonMatch[0]);
+      if (data.color) data.color = closestPreset(data.color);
+      return data;
+
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        lastError = new Error('Request timed out. Try again.');
+      } else {
+        lastError = e;
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `API error ${res.status}`);
-  }
-
-  const json = await res.json();
-  const text = json.choices?.[0]?.message?.content || '';
-
-  if (!text) {
-    throw new Error('No clothing item detected. Please photograph a clothing item directly.');
-  }
-
-  // Strip markdown code fences if present
-  const cleaned = text.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
-
-  // Try to extract JSON object if there's surrounding text
-  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error(`Could not find JSON in response: ${cleaned.slice(0, 100)}`);
-  }
-
-  const data = JSON.parse(jsonMatch[0]);
-
-  // Map the returned hex to the closest preset swatch
-  if (data.color) data.color = closestPreset(data.color);
-
-  return data;
+  throw lastError;
 }

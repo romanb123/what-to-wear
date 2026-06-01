@@ -1,4 +1,4 @@
-﻿{
+{
   "expo": {
     "name": "מה ללבוש",
     "slug": "what-to-wear",
@@ -19,7 +19,10 @@
       "adaptiveIcon": {
         "backgroundColor": "#0E0E0E"
       },
-      "package": "com.whatowear.app"
+      "package": "com.whatowear.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       [
@@ -33,9 +36,15 @@
         "react-native-google-mobile-ads",
         {
           "androidAppId": "ca-app-pub-7192489598387711~3466165963",
-          "iosAppId":     "ca-app-pub-3940256099942544~1458002511"
+          "iosAppId": "ca-app-pub-3940256099942544~1458002511"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ae281c33-aa33-4d0c-b660-103878a943e7"
+      }
+    },
+    "owner": "rbapp"
   }
 }

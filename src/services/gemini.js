@@ -1,7 +1,7 @@
 import { GEMINI_API_KEY } from '../config';
 import { PRESET_COLORS } from '../theme';
 
-const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+const MODELS = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
 
 // ── Color matching ──────────────────────────────────────────────────────────
 
